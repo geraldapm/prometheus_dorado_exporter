@@ -2,7 +2,9 @@ import configparser
 import json
 import requests
 import urllib3
+import logging
 urllib3.disable_warnings()
+
 
 config = configparser.ConfigParser()
 config.read('config.ini')
@@ -11,12 +13,30 @@ user = config['DEFAULT']['dorado_user']
 password = config['DEFAULT']['dorado_password']
 
 
+# These two lines enable debugging at httplib level (requests->urllib3->http.client)
+# You will see the REQUEST, including HEADERS and DATA, and RESPONSE with HEADERS but without DATA.
+# The only thing missing will be the response.body which is not logged.
+try:
+    import http.client as http_client
+except ImportError:
+    # Python 2
+    import httplib as http_client
+http_client.HTTPConnection.debuglevel = 1
+
+# You must initialize logging, otherwise you'll not see debug output.
+logging.basicConfig()
+logging.getLogger().setLevel(logging.DEBUG)
+requests_log = logging.getLogger("requests.packages.urllib3")
+requests_log.setLevel(logging.DEBUG)
+requests_log.propagate = True
+
 def api_connect(api_user, api_password, api_ip, api_port):
     api_url = "https://{0}:{1}/deviceManager/rest/xxxxx/sessions".format(api_ip, api_port)
     api_data = json.dumps({'scope': '0', 'username': api_user, 'password': api_password})
     headers = {'Connection': 'keep-alive', 'Content-Type': 'application/json', 'Accept': 'application/json'}
     api_connect = requests.post(api_url, verify=False, data=api_data, headers=headers)
     api_connect_info = (json.loads(api_connect.content.decode('utf8')), api_connect.cookies)  # Decode нужен потому что объект имеет тип bytes
+    ###print (api_connect_info)
     return api_connect_info
 
 
@@ -31,10 +51,14 @@ def api_logout(api_ip, api_port, api_cookies, device_id, iBaseToken):
 
 def get_data(api_connection, api_host, api_port, path, params={}):
     device_id = api_connection[0]['data']['deviceid']
+    token = api_connection[0]['data']['iBaseToken']
     endpoint = "https://{0}:{1}/deviceManager/rest/{2}/{3}".format(api_host, api_port, device_id, path)
     api_cookies = api_connection[1]
-    r = requests.get(endpoint, verify=False, cookies=api_cookies, params=params)
+    headers = {'iBaseToken': token, 'Connection': 'keep-alive', 'Content-Type': 'application/json', 'Accept': 'application/json'}
+    r = requests.get(endpoint, verify=False, cookies=api_cookies, params=params, headers=headers)
+    ###print (r)
     result = json.loads(r.content.decode('cp1251'))
+    ###print (result)
     return result
 
 
@@ -145,7 +169,7 @@ def get_power_data(metrics, connection, api_host, api_port):
 def get_bbu_data(metrics, connection, api_host, api_port):
     data = get_data(connection, api_host, api_port, "backup_power")
     for entry in data["data"]:
-        # print(json.dumps(entry, indent=2))
+        ###print (json.dumps(entry, indent=2))
         labels = [
                     ("type", "bbu"),
                     ("id", entry["ID"]),
@@ -179,7 +203,7 @@ def get_bbu_data(metrics, connection, api_host, api_port):
 def get_enclosure_data(metrics, connection, api_host, api_port):
     data = get_data(connection, api_host, api_port, "enclosure")
     for entry in data["data"]:
-        # print(json.dumps(entry, indent=2))
+        ###print(json.dumps(entry, indent=2))
         labels = [
                     ("type", "enclosure"),
                     ("serial", entry["SERIALNUM"]),
@@ -214,7 +238,7 @@ def get_enclosure_data(metrics, connection, api_host, api_port):
 def get_controller_data(metrics, connection, api_host, api_port):
     data = get_data(connection, api_host, api_port, "controller")
     for entry in data["data"]:
-        # print(json.dumps(entry, indent=2))
+        ###print(json.dumps(entry, indent=2))
         labels = [
                     ("type", "controller"),
                     ("id", entry["ID"]),
@@ -302,7 +326,7 @@ def get_controller_data(metrics, connection, api_host, api_port):
 def get_intf_module_data(metrics, connection, api_host, api_port):
     data = get_data(connection, api_host, api_port, "intf_module")
     for entry in data["data"]:
-        # print(json.dumps(entry, indent=2))
+        ###print(json.dumps(entry, indent=2))
         labels = [
                     ("type", "intf_module"),
                     ("id", entry["ID"]),
@@ -330,7 +354,7 @@ def get_intf_module_data(metrics, connection, api_host, api_port):
 def get_eth_port_data(metrics, connection, api_host, api_port):
     data = get_data(connection, api_host, api_port, "eth_port")
     for entry in data["data"]:
-        # print(json.dumps(entry, indent=2))
+        ###print(json.dumps(entry, indent=2))
         labels = [
                     ("type", "eth_port"),
                     ("id", entry["ID"]),
@@ -409,7 +433,7 @@ def get_eth_port_data(metrics, connection, api_host, api_port):
                 data_ids += valuemap["data_ids"][metric] + ','
             params = {"CMO_STATISTIC_UUID": stats_uid, "CMO_STATISTIC_DATA_ID_LIST": data_ids}
             data = get_data(connection, api_host, api_port, "performace_statistic/cur_statistic_data", params=params)
-            # print(json.dumps(data, indent=2))
+            ###print(json.dumps(data, indent=2))
             values = data["data"][0]["CMO_STATISTIC_DATA_LIST"].split(',')
             i = 0
             for metric in perfmetrics_list:
@@ -428,7 +452,7 @@ def get_sas_port_data(metrics, connection, api_host, api_port):
     # I don't have them connected, so this function may contain bugs. Check out
     data = get_data(connection, api_host, api_port, "sas_port")
     for entry in data["data"]:
-        # print(json.dumps(entry, indent=2))
+        ###print(json.dumps(entry, indent=2))
         labels = [
                     ("type", "sas_port"),
                     ("id", entry["ID"]),
@@ -495,7 +519,7 @@ def get_sas_port_data(metrics, connection, api_host, api_port):
             data_ids += valuemap["data_ids"][metric] + ','
         params = {"CMO_STATISTIC_UUID": stats_uid, "CMO_STATISTIC_DATA_ID_LIST": data_ids}
         data = get_data(connection, api_host, api_port, "performace_statistic/cur_statistic_data", params=params)
-        # print(json.dumps(data, indent=2))
+        ###print(json.dumps(data, indent=2))
         values = data["data"][0]["CMO_STATISTIC_DATA_LIST"].split(',')
         i = 0
         for metric in perfmetrics_list:
@@ -513,7 +537,7 @@ def get_sas_port_data(metrics, connection, api_host, api_port):
 def get_fan_data(metrics, connection, api_host, api_port):
     data = get_data(connection, api_host, api_port, "fan")
     for entry in data["data"]:
-        # print(json.dumps(entry, indent=2))
+        ###print(json.dumps(entry, indent=2))
         labels = [
                     ("type", "fan"),
                     ("id", entry["ID"]),
@@ -540,7 +564,7 @@ def get_fan_data(metrics, connection, api_host, api_port):
 def get_lun_data(metrics, connection, api_host, api_port):
     data = get_data(connection, api_host, api_port, "lun")
     for entry in data["data"]:
-        # print(json.dumps(entry, indent=2))
+        ###print(json.dumps(entry, indent=2))
         labels = [
                     ("type", "lun"),
                     ("id", entry["ID"]),
@@ -608,7 +632,7 @@ def get_lun_data(metrics, connection, api_host, api_port):
             data_ids += valuemap["data_ids"][metric] + ','
         params = {"CMO_STATISTIC_UUID": stats_uid, "CMO_STATISTIC_DATA_ID_LIST": data_ids}
         data = get_data(connection, api_host, api_port, "performace_statistic/cur_statistic_data", params=params)
-        # print(json.dumps(data, indent=2))
+        ###print(json.dumps(data, indent=2))
         values = data["data"][0]["CMO_STATISTIC_DATA_LIST"].split(',')
         i = 0
         for metric in perfmetrics_list:
@@ -626,7 +650,7 @@ def get_lun_data(metrics, connection, api_host, api_port):
 def get_disk_pool_data(metrics, connection, api_host, api_port):
     data = get_data(connection, api_host, api_port, "diskpool")
     for entry in data["data"]:
-        # print(json.dumps(entry, indent=2))
+        ###print(json.dumps(entry, indent=2))
         labels = [
                     ("type", "disk_pool"),
                     ("id", entry["ID"]),
@@ -700,7 +724,7 @@ def get_disk_pool_data(metrics, connection, api_host, api_port):
             data_ids += valuemap["data_ids"][metric] + ','
         params = {"CMO_STATISTIC_UUID": stats_uid, "CMO_STATISTIC_DATA_ID_LIST": data_ids}
         data = get_data(connection, api_host, api_port, "performace_statistic/cur_statistic_data", params=params)
-        # print(json.dumps(data, indent=2))
+        ###print(json.dumps(data, indent=2))
         values = data["data"][0]["CMO_STATISTIC_DATA_LIST"].split(',')
         i = 0
         for metric in perfmetrics_list:
@@ -718,7 +742,7 @@ def get_disk_pool_data(metrics, connection, api_host, api_port):
 def get_storage_pool_data(metrics, connection, api_host, api_port):
     data = get_data(connection, api_host, api_port, "storagepool")
     for entry in data["data"]:
-        # print(json.dumps(entry, indent=2))
+        ###print(json.dumps(entry, indent=2))
         labels = [
                     ("type", "storage_pool"),
                     ("id", entry["ID"]),
@@ -775,8 +799,6 @@ def get_storage_pool_data(metrics, connection, api_host, api_port):
                             # "cache_chunk_usage",
                             # "max_read_kbytes",
                             # "max_write_kbytes",
-                            # "failed_reads",
-                            # "failed_writes",
 
                             ]
         data_ids = ""
@@ -784,7 +806,7 @@ def get_storage_pool_data(metrics, connection, api_host, api_port):
             data_ids += valuemap["data_ids"][metric] + ','
         params = {"CMO_STATISTIC_UUID": stats_uid, "CMO_STATISTIC_DATA_ID_LIST": data_ids}
         data = get_data(connection, api_host, api_port, "performace_statistic/cur_statistic_data", params=params)
-        # print(json.dumps(data, indent=2))
+        ###print(json.dumps(data, indent=2))
         values = data["data"][0]["CMO_STATISTIC_DATA_LIST"].split(',')
         i = 0
         for metric in perfmetrics_list:
@@ -811,7 +833,7 @@ def collect_data(full_host):
     metrics = get_bbu_data(metrics, connection, api_host, api_port)
     # metrics = get_expboard_data(metrics, connection, api_host, api_port)  TODO: parse expboard output. I don't have one
     metrics = get_intf_module_data(metrics, connection, api_host, api_port)
-    metrics = get_eth_port_data(metrics, connection, api_host, api_port)
+    #metrics = get_eth_port_data(metrics, connection, api_host, api_port)
     metrics = get_sas_port_data(metrics, connection, api_host, api_port)
     # metrics = get_fc_port_data(metrics, connection, api_host, api_port) TODO: parse fc_port output. I don't have one
     metrics = get_fan_data(metrics, connection, api_host, api_port)
@@ -822,6 +844,7 @@ def collect_data(full_host):
     api_cookies = connection[1]
     iBaseToken = connection[0]['data']['iBaseToken']
     api_logout(api_host, api_port, api_cookies, device_id, iBaseToken)
+    print (metrics)
     return metrics
 
 
